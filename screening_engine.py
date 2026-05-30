@@ -1,93 +1,91 @@
-from preprocessor import clean_text
-from vectorizer import hitung_tfidf, hitung_cosine_similarity
-import numpy as np
+import os
+from pdf_parser import extract_text_from_pdf, clean_resume_text
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
 from colorama import Fore, init
 
+# Inisialisasi visual warna terminal
 init(autoreset=True)
 
-# 1. INPUT STANDARD KUALIFIKASI LOWONGAN (JOB DESCRIPTION)
+# 1. DEFINE JOB DESCRIPTION (KRITERIA YANG DICARI PERUSAHAAN)
+# Kita set kembali ke core kompetensi kamu: Backend Developer
 JOB_DESCRIPTION = """
-Dibutuhkan Digital Marketer dan Content Writer profesional. Menguasai teknik SEO, copy writing iklan, 
-dan mampu mengelola campaign di media sosial. Mahir membuat konten visual menggunakan Canva 
-serta terbiasa menulis artikel di blog berbasis WordPress untuk meningkatkan traffic.
+Dibutuhkan Senior Backend Developer yang mahir menggunakan framework Laravel dan Python. 
+Menguasai manajemen database SQL / MySQL, pembuatan REST API yang efisien, 
+serta terbiasa menggunakan Git untuk version control di dalam tim developer.
 """
 
-# 2. DATA PELAMAR (RESUME DATABASE SIMULATION)
-# Kita bikin profil pelamar dengan variasi skill yang kontras
-RESUME_DATABASE = {
-    "Pelamar_Al": """
-    Software Engineer lulusan SMK jurusan Rekayasa Perangkat Lunak (RPL). Memiliki keahlian kuat 
-    dalam web development menggunakan framework Laravel PHP, database MySQL SQL, serta otomatisasi script 
-    menggunakan Python. Berpengalaman membangun sistem manajemen digital, RESTful API backend, 
-    dan melatih model machine learning sederhana menggunakan library NumPy. Aktif menggunakan Git untuk kolaborasi kode.
-    """,
-    "Pelamar_Budi": """
-    Saya seorang Fullstack Web Developer. Fokus pada frontend teknologi seperti HTML, CSS, JavaScript, 
-    dan framework ReactJS. Bisa sedikit PHP native untuk backend, tapi lebih suka mendesain UI/UX yang responsif 
-    menggunakan TailwindCSS dan Figma. Kurang menyukai Python ataupun data science.
-    """,
-    "Pelamar_Chandra": """
-    Seorang Content Writer dan Digital Marketer berpengalaman selama 3 tahun. Mahir menulis artikel SEO, 
-    mengelola campaign di media sosial, copy writing iklan, serta berkomunikasi dengan klien. 
-    Menguasai tools Microsoft Office, Canva, dan WordPress dasar untuk blogging.
-    """
-}
-
-def running_screening_system():
+def main():
     print(f"{Fore.CYAN}=======================================================")
-    print(f"{Fore.GREEN}     AL ENTERPRISE NLP RESUME SCREENING ENGINE V1      ")
+    print(f"{Fore.GREEN}     MITRA KREASI DIGITAL - AI CV ANALYZER v2.0        ")
     print(f"{Fore.CYAN}=======================================================")
     
-    # Preprocessing teks Job Desc
-    job_desc_tokens = clean_text(JOB_DESCRIPTION)
+    # 2. DEFINISIKAN DATABASE FILE PDF PELAMAR
+    # Memetakan file PDF riil yang ada di folder project
+    resume_files = {
+        "Pelamar_AL (Senior Backend)": "cv_al.pdf",
+        "Pelamar_Budi (Digital Marketing)": "cv_budi.pdf"
+    }
     
-    nama_pelamar = list(RESUME_DATABASE.keys())
-    semua_dokumen = [job_desc_tokens] # Index 0 selalu milik Job Desc
+    # 3. PIPELINE PARSING & CLEANING TEXT
+    print(f"{Fore.YELLOW}[INFO] Memulai ekstraksi dokumen PDF asli...")
+    cleaned_resumes = []
+    candidate_names = []
     
-    # Preprocessing teks semua CV pelamar
-    for nama in nama_pelamar:
-        cv_tokens = clean_text(RESUME_DATABASE[nama])
-        semua_dokumen.append(cv_tokens)
-        
-    print(f"{Fore.YELLOW}[INFO] Berhasil memproses {len(nama_pelamar)} resume dari database.")
-    print(f"{Fore.YELLOW}[INFO] Membangun Vektor Matriks TF-IDF secara dinamis...")
-    
-    # Proses ekstraksi fitur dan pembobotan kata menggunakan NumPy
-    matrix, vocab = hitung_tfidf(semua_dokumen)
-    
-    vektor_job_desc = matrix[0] # Vektor target
-    hasil_scoring = []
-    
-    # Hitung kemiripan tiap CV dengan Job Desc
-    for idx, nama in enumerate(nama_pelamar):
-        vektor_cv = matrix[idx + 1] # Index bergeser 1 karena index 0 dipakai Job Desc
-        skor_kemiripan = hitung_cosine_similarity(vektor_job_desc, vektor_cv)
-        
-        # Konversi ke bentuk persentase
-        match_percentage = skor_kemiripan * 100
-        hasil_scoring.append((nama, match_percentage))
-        
-    # Sortir hasil berdasarkan persentase kecocokan tertinggi (Descending)
-    hasil_scoring.sort(key=lambda x: x[1], reverse=True)
-    
-    print(f"\n{Fore.GREEN}>>> HASIL EVALUASI RANKING PELAMAR AUTOMATIS <<<")
-    print(f"{'-'*55}")
-    print(f"{'Peringkat':<10} | {'Nama Kandidat':<18} | {'Persentase Match':<15}")
-    print(f"{'-'*55}")
-    
-    for rank, (nama, skor) in enumerate(hasil_scoring, 1):
-        # Tentukan warna teks berdasarkan kelayakan skor
-        if skor >= 50.0:
-            warna = Fore.GREEN  # Layak interview
-        elif skor >= 25.0:
-            warna = Fore.YELLOW # Pertimbangan
-        else:
-            warna = Fore.RED    # Auto-reject
+    for name, file_path in resume_files.items():
+        if os.path.exists(file_path):
+            # Ekstrak teks dari PDF beneran
+            raw_text = extract_text_from_pdf(file_path)
+            # Bersihkan teks menggunakan NLP preprocessor kita
+            cleaned_text = clean_resume_text(raw_text)
             
-        print(f"{rank:<10} | {nama:<18} | {warna}{skor:.2f}%")
+            cleaned_resumes.append(cleaned_text)
+            candidate_names.append(name)
+            print(f"{Fore.BLUE}[PARSED] Successfully extracted: {file_path}")
+        else:
+            print(f"{Fore.RED}[WARN] File {file_path} tidak ditemukan!")
+
+    if not cleaned_resumes:
+        print(f"{Fore.RED}[ERROR] Tidak ada data CV yang berhasil diproses. Pembatalan.")
+        return
+
+    # Bersihkan juga teks Kriteria Lowongan
+    cleaned_job_desc = clean_resume_text(JOB_DESCRIPTION)
+    
+    # 4. UPGRADE KE SKLEARN MACHINE LEARNING ENGINE
+    # Gabungkan kriteria lowongan dengan teks CV untuk proses enkoding vektor
+    all_documents = [cleaned_job_desc] + cleaned_resumes
+    
+    # Inisialisasi TF-IDF Vectorizer standar industri
+    vectorizer = TfidfVectorizer()
+    tfidf_matrix = vectorizer.fit_transform(all_documents)
+    
+    # Hitung Cosine Similarity antara Kriteria Lowongan (index 0) dengan semua CV pelamar
+    similarity_scores = cosine_similarity(tfidf_matrix[0:1], tfidf_matrix[1:]).flatten()
+    
+    # 5. GENERATE HRD DASHBOARD REPORT
+    print(f"\n{Fore.MAGENTA}>>> RANKING KANDIDAT BERDASARKAN SKOR ATS <<<")
+    print(f"{'-'*60}")
+    
+    # Gabungkan nama kandidat dan skornya, lalu urutkan dari yang tertinggi
+    results = list(zip(candidate_names, similarity_scores))
+    results.sort(key=lambda x: x[1], reverse=True)
+    
+    for rank, (name, score) in enumerate(results, 1):
+        percentage = score * 100
         
-    print(f"{'-'*55}")
-    print(f"{Fore.CYAN}=======================================================")
+        # Formatting warna berdasarkan skor kelulusan (Threshold: 40%)
+        if percentage >= 30:
+            status = f"{Fore.GREEN}LOLOS (Rekomendasi Interview)"
+            warna_skor = Fore.GREEN
+        else:
+            status = f"{Fore.RED}GAGAL (Kualifikasi Tidak Cocok)"
+            warna_skor = Fore.RED
+            
+        print(f"Peringkat {rank} : {name}")
+        print(f"Skor Aliansi : {warna_skor}{percentage:.2f}%")
+        print(f"Status       : {status}")
+        print(f"{'-'*60}")
 
 if __name__ == "__main__":
-    running_screening_system()
+    main()
